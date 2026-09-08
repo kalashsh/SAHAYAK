@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link, useRoute } from 'wouter';
 import { ArrowLeft, CheckCircle2, CircleHelp, ClipboardList, ExternalLink, Home, ScrollText, ShieldCheck } from 'lucide-react';
 import { SectionLabel, Wordmark, Pill, type Tone } from '../lib/ui';
@@ -32,6 +33,9 @@ export function HouseholdDetailPage() {
   const { gaps, loading: gapsLoading, error: gapsError } = useHouseholdGaps(id);
   const { overlaps, loading: overlapsLoading, error: overlapsError } = useHouseholdOverlaps(id);
   const create = useCreateHouseholdVerificationCase();
+  const [requested, setRequested] = useState<Record<string, string>>({});
+  const [requestErrors, setRequestErrors] = useState<Record<string, string>>({});
+  const pairKeyOf = (existingId: string, potentialId: string) => `${existingId}::${potentialId}`;
 
   if (!id) {
     return <div className="grid min-h-[50vh] place-items-center bg-background text-sm text-muted-foreground">No household selected.</div>;
@@ -48,11 +52,24 @@ export function HouseholdDetailPage() {
   const overlapsList = overlaps?.overlaps ?? [];
   const evaluated = gaps?.evaluatedTotal ?? overlaps?.evaluatedTotal ?? 40;
 
-  const requestGap = async (schemeId: string, schemeName: string) => {
-    await create.create(id, 'gap', schemeId);
+  const requestGap = async (schemeId: string) => {
+    const result = await create.create(id, 'gap', schemeId);
+    if (result) {
+      setRequested((prev) => ({ ...prev, [schemeId]: result.id }));
+      setRequestErrors((prev) => ({ ...prev, [schemeId]: '' }));
+    } else {
+      setRequestErrors((prev) => ({ ...prev, [schemeId]: create.error ?? 'Unable to create verification case.' }));
+    }
   };
-  const requestOverlap = async (overlapId: string, existingId: string, potentialId: string) => {
-    await create.create(id, 'overlap', existingId, potentialId);
+  const requestOverlap = async (existingId: string, potentialId: string) => {
+    const pairKey = pairKeyOf(existingId, potentialId);
+    const result = await create.create(id, 'overlap', existingId, potentialId);
+    if (result) {
+      setRequested((prev) => ({ ...prev, [pairKey]: result.id }));
+      setRequestErrors((prev) => ({ ...prev, [pairKey]: '' }));
+    } else {
+      setRequestErrors((prev) => ({ ...prev, [pairKey]: create.error ?? 'Unable to create verification case.' }));
+    }
   };
 
   return (
@@ -153,13 +170,31 @@ export function HouseholdDetailPage() {
                   <div className="mt-4 flex items-center justify-between gap-3">
                     <span className="text-xs text-muted-foreground">{gap.nextStep}</span>
                     <button
-                      onClick={() => requestGap(gap.schemeId, gap.schemeName)}
-                      disabled={create.busy}
-                      className="inline-flex shrink-0 items-center gap-2 rounded-full border border-brand-terracotta/40 px-3 py-2 font-mono text-[9px] uppercase tracking-[0.12em] text-brand-terracotta transition hover:bg-terracotta"
+                      onClick={() => requestGap(gap.schemeId)}
+                      disabled={create.busy || Boolean(requested[gap.schemeId])}
+                      className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 font-mono text-[9px] uppercase tracking-[0.12em] transition ${
+                        requested[gap.schemeId]
+                          ? 'cursor-default border-sage bg-sage text-primary'
+                          : 'border-brand-terracotta/40 text-brand-terracotta hover:bg-terracotta'
+                      }`}
                     >
-                      <ClipboardList size={13} /> Request verification
+                      {requested[gap.schemeId] ? (
+                        <>
+                          <CheckCircle2 size={13} /> Verification requested · {requested[gap.schemeId]}
+                        </>
+                      ) : (
+                        <>
+                          <ClipboardList size={13} /> Request verification
+                        </>
+                      )}
                     </button>
                   </div>
+                  {requestErrors[gap.schemeId] && (
+                    <div className="mt-3 flex items-center gap-2 border-t border-border pt-3 text-sm text-terracotta-fg">
+                      <CircleHelp size={14} className="shrink-0" />
+                      {requestErrors[gap.schemeId]}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -196,13 +231,31 @@ export function HouseholdDetailPage() {
                 <div className="mt-4 flex items-center justify-between gap-3">
                   <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-brand-terracotta">{overlap.verification}</span>
                   <button
-                    onClick={() => requestOverlap(id, overlap.existingSchemeId, overlap.potentialSchemeId)}
-                    disabled={create.busy}
-                    className="inline-flex shrink-0 items-center gap-2 rounded-full border border-brand-saffron/40 px-3 py-2 font-mono text-[9px] uppercase tracking-[0.12em] text-brand-saffron transition hover:bg-saffron"
+                    onClick={() => requestOverlap(overlap.existingSchemeId, overlap.potentialSchemeId)}
+                    disabled={create.busy || Boolean(requested[pairKeyOf(overlap.existingSchemeId, overlap.potentialSchemeId)])}
+                    className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 font-mono text-[9px] uppercase tracking-[0.12em] transition ${
+                      requested[pairKeyOf(overlap.existingSchemeId, overlap.potentialSchemeId)]
+                        ? 'cursor-default border-sage bg-sage text-primary'
+                        : 'border-brand-saffron/40 text-brand-saffron hover:bg-saffron'
+                    }`}
                   >
-                    <ClipboardList size={13} /> Request verification
+                    {requested[pairKeyOf(overlap.existingSchemeId, overlap.potentialSchemeId)] ? (
+                      <>
+                        <CheckCircle2 size={13} /> Verification requested · {requested[pairKeyOf(overlap.existingSchemeId, overlap.potentialSchemeId)]}
+                      </>
+                    ) : (
+                      <>
+                        <ClipboardList size={13} /> Request verification
+                      </>
+                    )}
                   </button>
                 </div>
+                {requestErrors[pairKeyOf(overlap.existingSchemeId, overlap.potentialSchemeId)] && (
+                  <div className="mt-3 flex items-center gap-2 border-t border-border pt-3 text-sm text-terracotta-fg">
+                    <CircleHelp size={14} className="shrink-0" />
+                    {requestErrors[pairKeyOf(overlap.existingSchemeId, overlap.potentialSchemeId)]}
+                  </div>
+                )}
               </div>
             ))}
           </div>
