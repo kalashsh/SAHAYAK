@@ -18,6 +18,7 @@ import { HouseholdDetailPage } from './pages/HouseholdDetailPage';
 import { HouseholdsPage } from './pages/HouseholdsPage';
 import { Landing } from './pages/LandingPage';
 import { MapsPage } from './pages/MapsPage';
+import { NewHouseholdPage } from './pages/NewHouseholdPage';
 import { NotFound } from './pages/NotFoundPage';
 import { OpportunityPage } from './pages/OpportunityPage';
 import { OverviewPage } from './pages/OverviewPage';
@@ -37,7 +38,7 @@ function LanguageProvider({ children }: { children: ReactNode }) {
 }
 
 function Router() {
-  return <Switch><Route path="/" component={Landing} /><Route path="/admin-login" component={AdminLogin} /><Route path="/citizen" component={CitizenLanding} /><Route path="/citizen/profile" component={CitizenWizard} /><Route path="/citizen/results" component={CitizenResults} /><Route path="/citizen/scheme/:id" component={CitizenSchemeDetail} /><Route path="/citizen/compare" component={CitizenCompare} /><Route path="/citizen/saved" component={CitizenSaved} /><Route path="/citizen/profile/view" component={CitizenProfilePage} /><Route path="/citizen/profile/edit" component={CitizenWizard} /><Route path="/dashboard" component={OverviewPage} /><Route path="/gap-radar" component={GapRadarPage} /><Route path="/welfare-graph" component={WelfareGraphPage} /><Route path="/opportunity-radar" component={OpportunityPage} /><Route path="/maps" component={MapsPage} /><Route path="/households" component={HouseholdsPage} /><Route path="/households/:id" component={HouseholdDetailPage} /><Route path="/rule-consistency" component={RuleConsistencyPage} /><Route path="/simulator" component={SimulatorPage} /><Route path="/verification" component={VerificationPage} /><Route path="/audit" component={AuditPage} /><Route component={NotFound} /></Switch>;
+  return <Switch><Route path="/" component={Landing} /><Route path="/admin-login" component={AdminLogin} /><Route path="/citizen" component={CitizenLanding} /><Route path="/citizen/profile" component={CitizenWizard} /><Route path="/citizen/results" component={CitizenResults} /><Route path="/citizen/scheme/:id" component={CitizenSchemeDetail} /><Route path="/citizen/compare" component={CitizenCompare} /><Route path="/citizen/saved" component={CitizenSaved} /><Route path="/citizen/profile/view" component={CitizenProfilePage} /><Route path="/citizen/profile/edit" component={CitizenWizard} /><Route path="/dashboard" component={OverviewPage} /><Route path="/gap-radar" component={GapRadarPage} /><Route path="/welfare-graph" component={WelfareGraphPage} /><Route path="/opportunity-radar" component={OpportunityPage} /><Route path="/maps" component={MapsPage} /><Route path="/households" component={HouseholdsPage} /><Route path="/households/new" component={NewHouseholdPage} /><Route path="/households/:id" component={HouseholdDetailPage} /><Route path="/rule-consistency" component={RuleConsistencyPage} /><Route path="/simulator" component={SimulatorPage} /><Route path="/verification" component={VerificationPage} /><Route path="/audit" component={AuditPage} /><Route component={NotFound} /></Switch>;
 }
 
 function RoutedApp() {

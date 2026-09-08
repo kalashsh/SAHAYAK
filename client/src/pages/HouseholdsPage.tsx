@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Link } from 'wouter';
-import { ChevronLeft, ChevronRight, Home, SlidersHorizontal, Users } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Home, Plus, SlidersHorizontal, Users } from 'lucide-react';
 import { SectionLabel, Wordmark, Pill } from '../lib/ui';
 import { useHouseholds } from '../lib/api';
 import { indiaStates } from '../lib/citizen';
+import { USER_ENTERED_DATASET_LABEL } from '../lib/manualHousehold';
 
 export const ARCHE_TYPE_LABELS: Record<string, string> = {
   farmer: 'Farmer',
@@ -19,6 +20,7 @@ export const ARCHE_TYPE_LABELS: Record<string, string> = {
   senior: 'Senior citizen',
   disability: 'Person with disability',
   widow: 'Widow',
+  other: 'Other',
 };
 
 export const ARCHE_TYPES = Object.keys(ARCHE_TYPE_LABELS);
@@ -30,7 +32,7 @@ const districtsFor = (state: string) => {
   return Array.from(new Set(indiaStates.flatMap((item) => item.districts.map((district) => district.name))));
 };
 
-const SCENARIOS = ['All scenarios', 'synthetic'];
+const SCENARIOS = ['All scenarios', 'synthetic', 'user-entered'];
 
 const emptyFilters = { search: '', state: 'All states', district: 'All districts', archetype: 'All archetypes', scenario: 'All scenarios', page: 1, limit: 25 };
 
@@ -69,6 +71,9 @@ export function HouseholdsPage() {
           </div>
         </div>
         <div className="flex items-center gap-3 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+          <Link href="/households/new" className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-foreground transition hover:border-primary">
+            <Plus size={13} /> Add Household
+          </Link>
           <span className="hidden sm:inline">{pagination ? `${pagination.total} households` : '—'}</span>
           <span className="hidden rounded-full bg-sage px-2.5 py-1 text-sage-fg md:inline">40 schemes evaluated</span>
         </div>
@@ -116,7 +121,7 @@ export function HouseholdsPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-brand-terracotta">{item.householdRef}</span>
                   <Pill tone="indigo">{ARCHE_TYPE_LABELS[item.archetype] ?? item.archetype}</Pill>
-                  <span className="text-xs text-muted-foreground">Synthetic</span>
+                  <span className="text-xs text-muted-foreground">{item.dataset === USER_ENTERED_DATASET_LABEL ? 'User-entered' : 'Synthetic'}</span>
                 </div>
                 <div className="mt-1 font-display text-2xl tracking-[-0.02em]">{item.headLabel}</div>
                 <div className="mt-1 truncate text-xs text-muted-foreground">{item.locality}, {item.district}, {item.state}</div>

@@ -304,6 +304,60 @@ export function useHousehold(id: string | undefined) {
   return { detail: data, loading, error };
 }
 
+export type CreateHouseholdInput = {
+  state: string;
+  district: string;
+  locality: string;
+  profile: Record<string, string>;
+  coverage: string[];
+};
+
+export type CreateHouseholdResult = {
+  household: {
+    id: string;
+    householdRef: string;
+    state: string;
+    district: string;
+    locality: string;
+    headLabel: string;
+    archetype: string;
+    scenario: string;
+    dataset: string;
+  };
+};
+
+export function useCreateHousehold() {
+  const [busy, setBusy] = useState(false);
+  const [created, setCreated] = useState<CreateHouseholdResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const create = async (input: CreateHouseholdInput) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await axios.post<CreateHouseholdResult>('/api/admin/households', input, {
+        withCredentials: true,
+      });
+      setCreated(res.data);
+      return res.data;
+    } catch (err) {
+      const message =
+        axios.isAxiosError(err) && err.response?.data?.error ? err.response.data.error : 'Unable to create household.';
+      setError(message);
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reset = () => {
+    setCreated(null);
+    setError(null);
+  };
+
+  return { busy, created, error, create, reset };
+}
+
 export function useHouseholdGaps(id: string | undefined) {
   const { data, loading, error } = useApiResource<HouseholdGapResponse>(
     id ? `/api/admin/households/${encodeURIComponent(id)}/gaps` : '',

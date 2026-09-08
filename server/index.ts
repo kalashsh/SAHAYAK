@@ -13,6 +13,15 @@ import { recommend } from "./recommendations.ts";
 import { analyzeHousehold, buildVerificationCaseRow, DATASET_LABEL, type VerificationCaseInput } from "./adminAnalysis.ts";
 import { citizenSchemes, defaultCitizenProfile, type CitizenProfile as CitizenProfileModel } from "../client/src/lib/citizen.ts";
 import {
+  USER_ENTERED_DATASET_LABEL,
+  USER_ENTERED_SCENARIO,
+  archetypeOfOccupation,
+  buildProfile,
+  headLabelOf,
+  householdRefFrom,
+} from "../client/src/lib/manualHousehold.ts";
+import { SCHEME_PURPOSE } from "./db/syntheticHouseholds.ts";
+import {
   SESSION_COOKIE,
   clearSessionCookie,
   createSession,
@@ -456,6 +465,121 @@ async function startServer() {
     } catch (err) {
       console.error("Failed to fetch households:", err);
       res.status(500).json({ error: "Failed to fetch households" });
+    }
+  });
+
+  app.post("/api/admin/households", requireAuth, requireRole("admin"), async (req, res) => {
+    try {
+      const body = req.body ?? {};
+      const state = typeof body.state === "string" ? body.state.trim() : "";
+      const district = typeof body.district === "string" ? body.district.trim() : "";
+      const locality = typeof body.locality === "string" ? body.locality.trim() : "";
+
+      if (!state || !district || !locality) {
+        return res.status(400).json({ error: "state, district and locality are required" });
+      }
+      if (state.length > 200 || district.length > 200 || locality.length > 200) {
+        return res.status(400).json({ error: "Location values are too long" });
+      }
+
+      const rawProfile =
+        body.profile && typeof body.profile === "object" && !Array.isArray(body.profile)
+          ? (body.profile as Record<string, unknown>)
+          : {};
+      const provided: Record<string, string> = {};
+      for (const field of Object.keys(defaultCitizenProfile) as (keyof CitizenProfileModel)[]) {
+        const value = rawProfile[field];
+        if (typeof value === "string") {
+          provided[field] = value;
+        }
+      }
+
+      const profile = buildProfile({ ...provided, state, district, locality });
+      const occupation = profile.occupation;
+
+      const validSchemeIds = new Set(citizenSchemes.map((scheme) => scheme.id));
+      const rawCoverage: unknown = body.coverage;
+      const schemeIds = Array.from(
+        new Set(
+          (Array.isArray(rawCoverage) ? rawCoverage : [])
+            .map((item: unknown): string => {
+              if (typeof item === 'string') return item.trim();
+              if (item && typeof item === 'object') {
+                const id = (item as { schemeId?: unknown }).schemeId;
+                return typeof id === 'string' ? id.trim() : '';
+              }
+              return '';
+            })
+            .filter((id) => id !== '' && validSchemeIds.has(id)),
+        ),
+      );
+
+      const archetype = archetypeOfOccupation(occupation);
+
+      // Generate a unique public household reference such as "HH-7QK2".
+      let householdRef = "";
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        const candidate = `HH-${householdRefFrom(randomBytes(4))}`;
+        const existing = await db
+          .select({ id: demoHouseholds.id })
+          .from(demoHouseholds)
+          .where(eq(demoHouseholds.householdRef, candidate))
+          .limit(1);
+        if (existing.length === 0) {
+          householdRef = candidate;
+          break;
+        }
+      }
+      if (!householdRef) {
+        return res.status(500).json({ error: "Could not allocate a unique household reference" });
+      }
+
+      const householdRow = {
+        id: householdRef,
+        householdRef,
+        state,
+        district,
+        locality,
+        headLabel: headLabelOf(occupation, profile.ageGroup),
+        archetype,
+        scenario: USER_ENTERED_SCENARIO,
+        dataset: USER_ENTERED_DATASET_LABEL,
+        profileJson: JSON.stringify(profile),
+      };
+
+      await db.transaction(async (tx) => {
+        await tx.insert(demoHouseholds).values(householdRow);
+        if (schemeIds.length > 0) {
+          await tx
+            .insert(demoCoverage)
+            .values(
+              schemeIds.map((schemeId) => ({
+                householdId: householdRef,
+                schemeId,
+                purpose: SCHEME_PURPOSE[schemeId] ?? "Other",
+                status: "active",
+                source: "prototype",
+              })),
+            );
+        }
+      });
+
+      res.status(201).json({
+        household: {
+          id: householdRef,
+          householdRef,
+          state,
+          district,
+          locality,
+          headLabel: householdRow.headLabel,
+          archetype,
+          scenario: USER_ENTERED_SCENARIO,
+          dataset: USER_ENTERED_DATASET_LABEL,
+        },
+      });
+    } catch (err) {
+      console.error("Failed to create household:", err);
+      res.status(500).json({ error: "Failed to create household" });
     }
   });
 
