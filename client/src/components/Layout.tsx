@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'wouter';
 import {
   ArrowRight, BarChart3, Bell, BookOpen, ChevronDown, ChevronRight, ClipboardCheck, Command,
-  GitBranch, Layers3, LogOut, Menu, MoreHorizontal, Network, Search, SlidersHorizontal, Table2,
+  GitBranch, Home, Layers3, LogOut, Menu, MoreHorizontal, Network, Search, SlidersHorizontal, Table2,
   Target, X, Zap, type LucideIcon,
 } from 'lucide-react';
 import { Logo } from '../lib/ui';
@@ -13,12 +13,12 @@ import { LanguageSwitcher } from './LanguageSwitcher';
 import { ThemeToggle } from './ThemeToggle';
 
 export const navGroups: { label: string; items: { href: string; label: string; icon: LucideIcon }[] }[] = [
-  { label: 'Intelligence', items: [{ href: '/dashboard', label: 'Overview', icon: BarChart3 }, { href: '/gap-radar', label: 'Gap Radar', icon: Target }, { href: '/welfare-graph', label: 'Welfare Graph', icon: Network }, { href: '/opportunity-radar', label: 'Opportunity Radar', icon: Zap }, { href: '/maps', label: 'Maps', icon: Layers3 }] },
+  { label: 'Intelligence', items: [{ href: '/dashboard', label: 'Overview', icon: BarChart3 }, { href: '/gap-radar', label: 'Gap Radar', icon: Target }, { href: '/welfare-graph', label: 'Welfare Graph', icon: Network }, { href: '/opportunity-radar', label: 'Opportunity Radar', icon: Zap }, { href: '/households', label: 'Households', icon: Home }, { href: '/maps', label: 'Maps', icon: Layers3 }] },
   { label: 'Governance', items: [{ href: '/rule-consistency', label: 'Rule Consistency', icon: GitBranch }, { href: '/simulator', label: 'What-If Simulator', icon: SlidersHorizontal }, { href: '/verification', label: 'Verification Queue', icon: ClipboardCheck }, { href: '/audit', label: 'Audit Trail', icon: Table2 }] },
 ];
 
 export function ConsoleSidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [location] = useLocation(); const { language } = useLanguage(); const navHindi: Record<string, string> = { Intelligence: 'इंटेलिजेंस', Governance: 'गवर्नेंस', Overview: 'ओवरव्यू', 'Gap Radar': 'गैप रडार', 'Welfare Graph': 'कल्याण ग्राफ', 'Opportunity Radar': 'अवसर रडार', Maps: 'मानचित्र', 'Rule Consistency': 'नियम संगति', 'What-If Simulator': 'क्या-अगर सिम्युलेटर', 'Verification Queue': 'सत्यापन कतार', 'Audit Trail': 'ऑडिट ट्रेल' };
+  const [location] = useLocation(); const { language } = useLanguage(); const navHindi: Record<string, string> = { Intelligence: 'इंटेलिजेंस', Governance: 'गवर्नेंस', Overview: 'ओवरव्यू', 'Gap Radar': 'गैप रडार', 'Welfare Graph': 'कल्याण ग्राफ', 'Opportunity Radar': 'अवसर रडार', Households: 'परिवार', Maps: 'मानचित्र', 'Rule Consistency': 'नियम संगति', 'What-If Simulator': 'क्या-अगर सिम्युलेटर', 'Verification Queue': 'सत्यापन कतार', 'Audit Trail': 'ऑडिट ट्रेल' };
   return <aside className={`fixed inset-y-0 left-0 z-50 flex w-[258px] flex-col border-r border-border bg-secondary px-5 py-6 transition-transform duration-300 md:static md:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
     <div className="flex items-center justify-between"><Link href="/dashboard" onClick={onClose}><Logo /></Link><button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full hover:bg-background md:hidden"><X size={15} /></button></div>
     <div className="mt-12 flex-1 space-y-8 overflow-y-auto">{navGroups.map(group => <div key={group.label}><div className="mb-3 px-3 font-mono text-[9px] uppercase tracking-[0.2em] text-muted-foreground">{language === 'hi' ? navHindi[group.label] : group.label}</div><nav className="space-y-1">{group.items.map(item => { const active = location === item.href; const Icon = item.icon; return <Link href={item.href} key={item.href} onClick={onClose} className={`group flex items-center gap-3 rounded-lg border-l-2 px-3 py-2.5 text-sm transition ${active ? 'border-brand-terracotta bg-background font-medium text-foreground' : 'border-transparent text-muted-foreground hover:bg-background/70 hover:text-foreground'}`}><Icon size={16} strokeWidth={active ? 2 : 1.7} /><span>{language === 'hi' ? navHindi[item.label] : item.label}</span>{item.label === 'Verification Queue' && <span className="ml-auto rounded-full bg-terracotta px-1.5 py-0.5 font-mono text-[9px] text-terracotta-fg">4</span>}</Link> })}</nav></div>)}</div>

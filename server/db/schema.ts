@@ -184,6 +184,57 @@ export const citizenSavedSchemes = pgTable(
   ],
 );
 
+// ---------------------------------------------------------------------------
+// Synthetic / prototype household welfare dataset (PS-3 demonstration only).
+// These rows are generated demo data, NEVER real government beneficiary or
+// personal data. Every household is tagged `scenario = 'synthetic'` and
+// `dataset = 'Synthetic · Prototype Data'`.
+// ---------------------------------------------------------------------------
+
+export const demoHouseholds = pgTable(
+  "demo_households",
+  {
+    id: text("id").primaryKey(),
+    householdRef: text("household_ref").notNull(),
+    state: text("state").notNull(),
+    district: text("district").notNull(),
+    locality: text("locality").notNull(),
+    headLabel: text("head_label").notNull(),
+    archetype: text("archetype").notNull(),
+    scenario: text("scenario").notNull().default("synthetic"),
+    dataset: text("dataset").notNull().default("Synthetic · Prototype Data"),
+    profileJson: text("profile_json").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("demo_households_ref_unique").on(table.householdRef),
+    index("demo_households_state_idx").on(table.state),
+    index("demo_households_district_idx").on(table.district),
+    index("demo_households_scenario_idx").on(table.scenario),
+  ],
+);
+
+export const demoCoverage = pgTable(
+  "demo_coverage",
+  {
+    id: serial("id").primaryKey(),
+    householdId: text("household_id")
+      .notNull()
+      .references(() => demoHouseholds.id, { onDelete: "cascade" }),
+    schemeId: text("scheme_id").notNull(),
+    purpose: text("purpose").notNull(),
+    status: text("status").notNull().default("active"),
+    source: text("source").notNull().default("synthetic"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("demo_coverage_household_scheme_unique").on(table.householdId, table.schemeId),
+    index("demo_coverage_household_idx").on(table.householdId),
+    index("demo_coverage_scheme_idx").on(table.schemeId),
+  ],
+);
+
 export const verificationCases = pgTable(
   "verification_cases",
   {
@@ -196,9 +247,13 @@ export const verificationCases = pgTable(
     signal: text("signal").notNull(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    householdRef: text("household_ref"),
+    kind: text("kind"),
+    purpose: text("purpose"),
   },
   (table) => [
     index("verification_cases_status_idx").on(table.status),
+    index("verification_cases_household_ref_idx").on(table.householdRef),
   ],
 );
 
@@ -236,3 +291,7 @@ export type Scheme = typeof schemes.$inferSelect;
 export type NewScheme = typeof schemes.$inferInsert;
 export type Session = typeof sessions.$inferSelect;
 export type NewSession = typeof sessions.$inferInsert;
+export type DemoHousehold = typeof demoHouseholds.$inferSelect;
+export type NewDemoHousehold = typeof demoHouseholds.$inferInsert;
+export type DemoCoverage = typeof demoCoverage.$inferSelect;
+export type NewDemoCoverage = typeof demoCoverage.$inferInsert;

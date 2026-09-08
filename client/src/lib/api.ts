@@ -83,6 +83,95 @@ export type AuditEvent = {
   next: string;
 };
 
+export type HouseholdSummary = {
+  id: string;
+  householdRef: string;
+  state: string;
+  district: string;
+  locality: string;
+  headLabel: string;
+  archetype: string;
+  scenario: string;
+  dataset: string;
+  coverageCount: number;
+  gapCount: number;
+  overlapCount: number;
+};
+
+export type HouseholdListResponse = {
+  dataset: string;
+  items: HouseholdSummary[];
+  pagination: { page: number; limit: number; total: number; totalPages: number };
+};
+
+export type HouseholdCoverage = {
+  schemeId: string;
+  schemeName: string;
+  purpose: string;
+  status: string;
+  source: string;
+};
+
+export type HouseholdDetail = {
+  dataset: string;
+  household: {
+    id: string;
+    householdRef: string;
+    state: string;
+    district: string;
+    locality: string;
+    headLabel: string;
+    archetype: string;
+    scenario: string;
+    dataset: string;
+    createdAt: string;
+    updatedAt: string;
+    profile: Record<string, string> | null;
+  };
+  coverage: HouseholdCoverage[];
+};
+
+export type HouseholdGap = {
+  schemeId: string;
+  schemeName: string;
+  purpose: string;
+  category: string;
+  tier: string;
+  score: number;
+  confidence: string;
+  matches: string[];
+  missing: string[];
+  notMatched: string[];
+  potentialBenefit: string;
+  nextStep: string;
+  signalText: string;
+};
+
+export type HouseholdGapResponse = {
+  dataset: string;
+  evaluatedTotal: number;
+  gaps: HouseholdGap[];
+};
+
+export type HouseholdOverlap = {
+  existingSchemeId: string;
+  existingSchemeName: string;
+  potentialSchemeId: string;
+  potentialSchemeName: string;
+  purpose: string;
+  relationship: 'both currently covered' | 'profile suggests eligibility';
+  reason: string;
+  priorityScore: number;
+  status: string;
+  verification: string;
+};
+
+export type HouseholdOverlapResponse = {
+  dataset: string;
+  evaluatedTotal: number;
+  overlaps: HouseholdOverlap[];
+};
+
 type ResourceState<T> = { data: T; loading: boolean; error: string | null };
 
 function useApiResource<T>(url: string, withCredentials = false): ResourceState<T> {
@@ -178,4 +267,89 @@ export function useVerificationCases() {
 export function useAuditTrail() {
   const { data, loading, error } = useApiResource<AuditEvent[]>('/api/admin/audit-trail', true);
   return { events: data, loading, error };
+}
+
+export type HouseholdFilters = {
+  search: string;
+  state: string;
+  district: string;
+  archetype: string;
+  scenario: string;
+  page: number;
+  limit: number;
+};
+
+export function useHouseholds(filters: HouseholdFilters) {
+  const params = new URLSearchParams();
+  if (filters.search.trim()) params.set('search', filters.search.trim());
+  if (filters.state && filters.state !== 'All states') params.set('state', filters.state);
+  if (filters.district && filters.district !== 'All districts') params.set('district', filters.district);
+  if (filters.archetype && filters.archetype !== 'All archetypes') params.set('archetype', filters.archetype);
+  if (filters.scenario && filters.scenario !== 'All scenarios') params.set('scenario', filters.scenario);
+  params.set('page', String(filters.page));
+  params.set('limit', String(filters.limit));
+  const query = params.toString();
+  const { data, loading, error } = useApiResource<HouseholdListResponse>(
+    `/api/admin/households${query ? `?${query}` : ''}`,
+    true,
+  );
+  return { response: data, loading, error };
+}
+
+export function useHousehold(id: string | undefined) {
+  const { data, loading, error } = useApiResource<HouseholdDetail>(
+    id ? `/api/admin/households/${encodeURIComponent(id)}` : '',
+    true,
+  );
+  return { detail: data, loading, error };
+}
+
+export function useHouseholdGaps(id: string | undefined) {
+  const { data, loading, error } = useApiResource<HouseholdGapResponse>(
+    id ? `/api/admin/households/${encodeURIComponent(id)}/gaps` : '',
+    true,
+  );
+  return { gaps: data, loading, error };
+}
+
+export function useHouseholdOverlaps(id: string | undefined) {
+  const { data, loading, error } = useApiResource<HouseholdOverlapResponse>(
+    id ? `/api/admin/households/${encodeURIComponent(id)}/overlaps` : '',
+    true,
+  );
+  return { overlaps: data, loading, error };
+}
+
+export function useCreateHouseholdVerificationCase() {
+  const [busy, setBusy] = useState(false);
+  const [created, setCreated] = useState<VerificationCase | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const create = async (id: string, kind: 'gap' | 'overlap', schemeId: string, linkedSchemeId?: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await axios.post<VerificationCase>(
+        `/api/admin/households/${encodeURIComponent(id)}/verification-cases`,
+        { kind, schemeId, linkedSchemeId: linkedSchemeId ?? null },
+        { withCredentials: true },
+      );
+      setCreated(res.data);
+      return res.data;
+    } catch (err) {
+      const message =
+        axios.isAxiosError(err) && err.response?.data?.error ? err.response.data.error : 'Unable to create verification case.';
+      setError(message);
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reset = () => {
+    setCreated(null);
+    setError(null);
+  };
+
+  return { busy, created, error, create, reset };
 }

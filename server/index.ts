@@ -6,11 +6,12 @@ import { randomBytes } from "crypto";
 import { fileURLToPath } from "url";
 import cookieParser from "cookie-parser";
 import bcrypt from "bcryptjs";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { db } from "./db/index.ts";
-import { citizenProfiles, citizenSavedSchemes, districts, schemes, sessions, users, verificationActions, verificationCases } from "./db/schema.ts";
+import { citizenProfiles, citizenSavedSchemes, demoCoverage, demoHouseholds, districts, schemes, sessions, users, verificationActions, verificationCases } from "./db/schema.ts";
 import { recommend } from "./recommendations.ts";
-import { defaultCitizenProfile, type CitizenProfile as CitizenProfileModel } from "../client/src/lib/citizen.ts";
+import { analyzeHousehold, buildVerificationCaseRow, DATASET_LABEL, type VerificationCaseInput } from "./adminAnalysis.ts";
+import { citizenSchemes, defaultCitizenProfile, type CitizenProfile as CitizenProfileModel } from "../client/src/lib/citizen.ts";
 import {
   SESSION_COOKIE,
   clearSessionCookie,
@@ -335,6 +336,282 @@ async function startServer() {
     } catch (err) {
       console.error("Failed to reject case:", err);
       res.status(500).json({ error: "Failed to reject case" });
+    }
+  });
+
+  // ---- Admin household intelligence (authenticated, admin-only) ----
+
+  const SCHEME_NAME_BY_ID = new Map(citizenSchemes.map((scheme) => [scheme.id, scheme.name]));
+
+  function parseStoredProfile(json: string): CitizenProfileModel | null {
+    try {
+      const value = JSON.parse(json) as Record<string, unknown>;
+      if (!value || typeof value !== "object" || typeof value.occupation !== "string") return null;
+      return value as unknown as CitizenProfileModel;
+    } catch {
+      return null;
+    }
+  }
+
+  async function loadHouseholdContext(id: string) {
+    const rows = await db.select().from(demoHouseholds).where(eq(demoHouseholds.id, id)).limit(1);
+    const household = rows[0];
+    if (!household) return null;
+    const coverage = await db
+      .select()
+      .from(demoCoverage)
+      .where(eq(demoCoverage.householdId, id))
+      .orderBy(asc(demoCoverage.schemeId));
+    return { household, coverage, profile: parseStoredProfile(household.profileJson) };
+  }
+
+  app.get("/api/admin/households", requireAuth, requireRole("admin"), async (req, res) => {
+    try {
+      const requestedPage = Number.parseInt(String(req.query.page ?? "1"), 10);
+      const requestedLimit = Number.parseInt(String(req.query.limit ?? "25"), 10);
+      const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+      const limit = Number.isFinite(requestedLimit) && requestedLimit > 0 ? Math.min(requestedLimit, 50) : 25;
+      const offset = (page - 1) * limit;
+
+      const state = typeof req.query.state === "string" && req.query.state.trim() ? req.query.state.trim() : null;
+      const district = typeof req.query.district === "string" && req.query.district.trim() ? req.query.district.trim() : null;
+      const archetype = typeof req.query.archetype === "string" && req.query.archetype.trim() ? req.query.archetype.trim() : null;
+      const scenario = typeof req.query.scenario === "string" && req.query.scenario.trim() ? req.query.scenario.trim() : null;
+      const search = typeof req.query.search === "string" && req.query.search.trim() ? req.query.search.trim().toLowerCase() : null;
+
+      const clauses = [];
+      if (state) clauses.push(eq(demoHouseholds.state, state));
+      if (district) clauses.push(eq(demoHouseholds.district, district));
+      if (archetype) clauses.push(eq(demoHouseholds.archetype, archetype));
+      if (scenario) clauses.push(eq(demoHouseholds.scenario, scenario));
+      if (search) {
+        clauses.push(
+          or(
+            ilike(demoHouseholds.householdRef, `%${search}%`),
+            ilike(demoHouseholds.headLabel, `%${search}%`),
+            ilike(demoHouseholds.locality, `%${search}%`),
+          ),
+        );
+      }
+      const where = clauses.length > 0 ? and(...clauses) : undefined;
+
+      const [totalRow] = await db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(demoHouseholds)
+        .where(where);
+      const total = totalRow?.total ?? 0;
+
+      const rows = await db
+        .select()
+        .from(demoHouseholds)
+        .where(where)
+        .orderBy(asc(demoHouseholds.id))
+        .limit(limit)
+        .offset(offset);
+
+      const ids = rows.map((row) => row.id);
+      const coverageRows = ids.length
+        ? await db
+            .select({ householdId: demoCoverage.householdId, schemeId: demoCoverage.schemeId })
+            .from(demoCoverage)
+            .where(inArray(demoCoverage.householdId, ids))
+        : [];
+
+      const perHousehold = new Map<string, { covered: Set<string>; count: number }>();
+      for (const row of rows) perHousehold.set(row.id, { covered: new Set<string>(), count: 0 });
+      for (const c of coverageRows) {
+        const entry = perHousehold.get(c.householdId);
+        if (entry) {
+          entry.covered.add(c.schemeId);
+          entry.count += 1;
+        }
+      }
+
+      const items = rows.map((row) => {
+        const entry = perHousehold.get(row.id);
+        const covered = entry ? Array.from(entry.covered) : [];
+        const profile = parseStoredProfile(row.profileJson);
+        const analysis = profile ? analyzeHousehold(profile, covered) : { gaps: [], overlaps: [] };
+        return {
+          id: row.id,
+          householdRef: row.householdRef,
+          state: row.state,
+          district: row.district,
+          locality: row.locality,
+          headLabel: row.headLabel,
+          archetype: row.archetype,
+          scenario: row.scenario,
+          dataset: row.dataset,
+          coverageCount: entry?.count ?? 0,
+          gapCount: analysis.gaps.length,
+          overlapCount: analysis.overlaps.length,
+        };
+      });
+
+      res.json({
+        dataset: DATASET_LABEL,
+        items,
+        pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) },
+      });
+    } catch (err) {
+      console.error("Failed to fetch households:", err);
+      res.status(500).json({ error: "Failed to fetch households" });
+    }
+  });
+
+  app.get("/api/admin/households/:id", requireAuth, requireRole("admin"), async (req, res) => {
+    try {
+      const context = await loadHouseholdContext(req.params.id);
+      if (!context) {
+        return res.status(404).json({ error: "Household not found" });
+      }
+      const { household, coverage } = context;
+      res.json({
+        dataset: DATASET_LABEL,
+        household: {
+          id: household.id,
+          householdRef: household.householdRef,
+          state: household.state,
+          district: household.district,
+          locality: household.locality,
+          headLabel: household.headLabel,
+          archetype: household.archetype,
+          scenario: household.scenario,
+          dataset: household.dataset,
+          createdAt: household.createdAt,
+          updatedAt: household.updatedAt,
+          profile: context.profile,
+        },
+        coverage: coverage.map((item) => ({
+          schemeId: item.schemeId,
+          schemeName: SCHEME_NAME_BY_ID.get(item.schemeId) ?? item.schemeId,
+          purpose: item.purpose,
+          status: item.status,
+          source: item.source,
+        })),
+      });
+    } catch (err) {
+      console.error("Failed to fetch household:", err);
+      res.status(500).json({ error: "Failed to fetch household" });
+    }
+  });
+
+  app.get("/api/admin/households/:id/gaps", requireAuth, requireRole("admin"), async (req, res) => {
+    try {
+      const context = await loadHouseholdContext(req.params.id);
+      if (!context) {
+        return res.status(404).json({ error: "Household not found" });
+      }
+      if (!context.profile) {
+        return res.status(422).json({ error: "Stored household profile could not be parsed" });
+      }
+      const analysis = analyzeHousehold(
+        context.profile,
+        context.coverage.map((item) => item.schemeId),
+      );
+      res.json({ dataset: DATASET_LABEL, evaluatedTotal: analysis.evaluatedTotal, gaps: analysis.gaps });
+    } catch (err) {
+      console.error("Failed to fetch household gaps:", err);
+      res.status(500).json({ error: "Failed to fetch household gaps" });
+    }
+  });
+
+  app.get("/api/admin/households/:id/overlaps", requireAuth, requireRole("admin"), async (req, res) => {
+    try {
+      const context = await loadHouseholdContext(req.params.id);
+      if (!context) {
+        return res.status(404).json({ error: "Household not found" });
+      }
+      if (!context.profile) {
+        return res.status(422).json({ error: "Stored household profile could not be parsed" });
+      }
+      const analysis = analyzeHousehold(
+        context.profile,
+        context.coverage.map((item) => item.schemeId),
+      );
+      res.json({ dataset: DATASET_LABEL, evaluatedTotal: analysis.evaluatedTotal, overlaps: analysis.overlaps });
+    } catch (err) {
+      console.error("Failed to fetch household overlaps:", err);
+      res.status(500).json({ error: "Failed to fetch household overlaps" });
+    }
+  });
+
+  app.post("/api/admin/households/:id/verification-cases", requireAuth, requireRole("admin"), async (req: AuthedRequest, res) => {
+    try {
+      const body = req.body ?? {};
+      const kind = body.kind;
+      const schemeId = typeof body.schemeId === "string" ? body.schemeId.trim() : "";
+      const linkedSchemeId = typeof body.linkedSchemeId === "string" ? body.linkedSchemeId.trim() : "";
+      if (kind !== "gap" && kind !== "overlap") {
+        return res.status(400).json({ error: "kind must be 'gap' or 'overlap'" });
+      }
+      if (!schemeId) {
+        return res.status(400).json({ error: "schemeId is required" });
+      }
+      if (kind === "overlap" && !linkedSchemeId) {
+        return res.status(400).json({ error: "linkedSchemeId is required for overlap cases" });
+      }
+
+      const context = await loadHouseholdContext(req.params.id);
+      if (!context) {
+        return res.status(404).json({ error: "Household not found" });
+      }
+      if (!context.profile) {
+        return res.status(422).json({ error: "Stored household profile could not be parsed" });
+      }
+
+      const analysis = analyzeHousehold(
+        context.profile,
+        context.coverage.map((item) => item.schemeId),
+      );
+
+      const source = {
+        householdRef: context.household.householdRef,
+        locality: context.household.locality,
+        district: context.household.district,
+        state: context.household.state,
+      };
+
+      let input: VerificationCaseInput | null = null;
+
+      if (kind === "gap") {
+        const gap = analysis.gaps.find((item) => item.schemeId === schemeId);
+        if (!gap) {
+          return res.status(400).json({ error: "No potential gap recorded for this scheme" });
+        }
+        input = {
+          household: source,
+          kind,
+          schemeName: gap.schemeName,
+          purpose: gap.purpose,
+          score: gap.score,
+          confidence: gap.confidence,
+          signal: `Potential welfare gap for ${gap.schemeName}. ${gap.signalText}`,
+        };
+      } else {
+        const overlap = analysis.overlaps.find(
+          (item) => item.existingSchemeId === schemeId && item.potentialSchemeId === linkedSchemeId,
+        );
+        if (!overlap) {
+          return res.status(400).json({ error: "No potential overlap recorded for this pair of schemes" });
+        }
+        input = {
+          household: source,
+          kind,
+          schemeName: overlap.existingSchemeName,
+          purpose: overlap.purpose,
+          score: overlap.priorityScore,
+          confidence: overlap.verification,
+          signal: `Potential overlapping welfare coverage between ${overlap.existingSchemeName} and ${overlap.potentialSchemeName}. ${overlap.reason}`,
+        };
+      }
+
+      const row = buildVerificationCaseRow(input);
+      const [created] = await db.insert(verificationCases).values(row).returning();
+      res.status(201).json(created);
+    } catch (err) {
+      console.error("Failed to create verification case:", err);
+      res.status(500).json({ error: "Failed to create verification case" });
     }
   });
 

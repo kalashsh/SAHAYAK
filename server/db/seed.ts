@@ -2,7 +2,8 @@ import "dotenv/config";
 import bcrypt from "bcryptjs";
 import { sql } from "drizzle-orm";
 import { db, pool } from "./index";
-import { verificationCases as verificationCaseSchema, districts as districtSchema, schemes as schemeSchema, users } from "./schema";
+import { verificationCases as verificationCaseSchema, districts as districtSchema, schemes as schemeSchema, users, demoHouseholds as demoHouseholdSchema, demoCoverage as demoCoverageSchema } from "./schema";
+import { buildSyntheticHouseholds, SYNTHETIC_DATASET_LABEL, SYNTHETIC_DATASET_TOTAL } from "./syntheticHouseholds";
 import { districts as seedDistricts, schemes as seedLegacySchemes, verificationCases as seedVerificationCases } from "../../client/src/lib/data";
 import { citizenSchemes } from "../../client/src/lib/citizen";
 
@@ -105,6 +106,26 @@ async function seed() {
     .insert(verificationCaseSchema)
     .values(caseRows)
     .onConflictDoNothing({ target: verificationCaseSchema.id });
+
+  console.log(`  Seeding synthetic households (${SYNTHETIC_DATASET_LABEL})...`);
+  const { households: demoHouseholds, coverageRecords: demoCoverageRecords } = buildSyntheticHouseholds();
+  const householdInsert = await db
+    .insert(demoHouseholdSchema)
+    .values(demoHouseholds)
+    .onConflictDoNothing({ target: demoHouseholdSchema.householdRef });
+  const coverageInsert = await db
+    .insert(demoCoverageSchema)
+    .values(demoCoverageRecords)
+    .onConflictDoNothing({ target: [demoCoverageSchema.householdId, demoCoverageSchema.schemeId] });
+
+  const [householdCount] = await db.select({ total: sql<number>`count(*)::int` }).from(demoHouseholdSchema);
+  const [coverageCount] = await db.select({ total: sql<number>`count(*)::int` }).from(demoCoverageSchema);
+  const [syntheticLabelCount] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(demoHouseholdSchema)
+    .where(sql`${demoHouseholdSchema.dataset} = ${SYNTHETIC_DATASET_LABEL}`);
+  console.log(`  Synthetic households: generated=${demoHouseholds.length} inserted=${householdInsert.rowCount} totalInDb=${householdCount.total} (${syntheticLabelCount.total} labelled "${SYNTHETIC_DATASET_LABEL}")`);
+  console.log(`  Synthetic coverage records: generated=${demoCoverageRecords.length} inserted=${coverageInsert.rowCount} totalInDb=${coverageCount.total}`);
 
   console.log(`Seeded ${seedUsers.length} users, ${districtRows.length} districts, ${schemeInsertResult.rowCount} schemes (${schemeCount.total} total available), ${caseRows.length} verification cases.`);
   console.log("Done.");
