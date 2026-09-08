@@ -1,0 +1,1 @@
+ALTER TABLE "citizen_profiles" ADD COLUMN "gender" text DEFAULT 'Prefer not to say' NOT NULL;

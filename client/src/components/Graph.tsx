@@ -1,0 +1,5 @@
+import { type Tone } from '../lib/ui';
+import { Target, ChevronDown } from 'lucide-react';
+
+export function GraphNode({ label, detail, tone, active = false }: { label: string; detail: string; tone: Tone; active?: boolean }) { return <div className={`relative w-full max-w-xs border px-5 py-4 text-center transition ${active ? 'border-brand-terracotta bg-terracotta' : 'border-border bg-card'}`}><div className="font-display text-2xl tracking-[-0.025em]">{label}</div><div className="mt-1 font-mono text-[9px] uppercase tracking-[0.14em] text-muted-foreground">{detail}</div>{active && <span className="absolute -right-2 -top-2 grid h-5 w-5 place-items-center rounded-full bg-brand-terracotta text-background"><Target size={11} /></span>}</div> }
+export function GraphLink({ text }: { text: string }) { return <div className="flex flex-col items-center py-3"><div className="h-8 border-l border-dashed border-primary" /><div className="flex items-center gap-2 font-mono text-[9px] uppercase tracking-[0.12em] text-primary"><ChevronDown size={12} />{text}</div></div> }
